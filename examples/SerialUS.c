@@ -8,8 +8,8 @@
 // I2C
 void i2c_master_init(void);
 
-// LPS22 
-LPS22 sensor;
+// LPS 
+LPS sensor;
 
 void app_main(){
  i2c_master_init();

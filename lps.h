@@ -1,347 +1,131 @@
-#include "lps.h"
-#include "driver/i2c.h"
-#include <math.h>
+#ifndef LPS_H 
+#define LPS_H
+
 #include <stdbool.h>
+#include <stdint.h>
+
+#define dummy_reg_count 13
+
+typedef enum {
+  device_331AP, 
+  device_25H,
+  device_22DF,
+  device_auto
+} deviceType;
+
+typedef enum { 
+  sa0_low,
+  sa0_high,
+  sa0_auto
+} sa0State;
+
+typedef enum {
+      REF_P_XL                = 0x08,
+      IF_CTRL                 = 0x0E,
+      WHO_AM_I                = 0x0F,
+      RES_CONF                = 0x10,
+      FIFO_WTM                = 0x15, // 22DF
+      I3C_IF_CTRL_ADD         = 0x19, // 22DF
+      FIFO_STATUS1            = 0x25, // 22DF
+      FIFO_STATUS2            = 0x26, // 22DF
+      STATUS_REG              = 0x27,
+      PRESS_OUT_XL            = 0x28,
+      PRESS_OUT_L             = 0x29,
+      PRESS_OUT_H             = 0x2A,
+      TEMP_OUT_L              = 0x2B,
+      TEMP_OUT_H              = 0x2C,
+      FIFO_STATUS             = 0x2F, // 25H
+      AMP_CTRL                = 0x30, // 331AP
+      DELTA_PRESS_XL          = 0x3C, // 331AP
+      DELTA_PRESS_L           = 0x3D, // 331AP
+      DELTA_PRESS_H           = 0x3E, // 331AP
+      FIFO_DATA_OUT_PRESS_XL  = 0x78, 
+      FIFO_DATA_OUT_PRESS_L   = 0x79, 
+      FIFO_DATA_OUT_PRESS_H   = 0x7A, 
+
+      REF_P_L          = -1,
+      REF_P_H          = -2,
+      CTRL_REG1        = -3,
+      CTRL_REG2        = -4,
+      CTRL_REG3        = -5,
+      CTRL_REG4        = -6,
+      INTERRUPT_CFG    = -7,
+      INT_SOURCE       = -8,
+      FIFO_CTRL        = -9,
+      THS_P_L          = -10,
+      THS_P_H          = -11,
+      RPDS_L           = -12,
+      RPDS_H           = -13,
+      // update dummy_reg_count if registers are added here!
+
+      // device-specific register addresses
+
+      LPS331AP_REF_P_L        = 0x09,
+      LPS331AP_REF_P_H        = 0x0A,
+      LPS331AP_CTRL_REG1      = 0x20,
+      LPS331AP_CTRL_REG2      = 0x21,
+      LPS331AP_CTRL_REG3      = 0x22,
+      LPS331AP_INTERRUPT_CFG  = 0x23,
+      LPS331AP_INT_SOURCE     = 0x24,
+      LPS331AP_THS_P_L        = 0x25,
+      LPS331AP_THS_P_H        = 0x26,
+
+      LPS25H_REF_P_L          = 0x09,
+      LPS25H_REF_P_H          = 0x0A,
+      LPS25H_CTRL_REG1        = 0x20,
+      LPS25H_CTRL_REG2        = 0x21,
+      LPS25H_CTRL_REG3        = 0x22,
+      LPS25H_CTRL_REG4        = 0x23,
+      LPS25H_INTERRUPT_CFG    = 0x24,
+      LPS25H_INT_SOURCE       = 0x25,
+      LPS25H_FIFO_CTRL        = 0x2E,
+      LPS25H_THS_P_L          = 0x30,
+      LPS25H_THS_P_H          = 0x31,
+      LPS25H_RPDS_L           = 0x39,
+      LPS25H_RPDS_H           = 0x3A,
+
+      LPS22DF_INTERRUPT_CFG   = 0x0B,
+      LPS22DF_THS_P_L         = 0x0C,
+      LPS22DF_THS_P_H         = 0x0D,
+      LPS22DF_CTRL_REG1       = 0x10,
+      LPS22DF_CTRL_REG2       = 0x11,
+      LPS22DF_CTRL_REG3       = 0x12,
+      LPS22DF_CTRL_REG4       = 0x13,
+      LPS22DF_FIFO_CTRL       = 0x14,
+      LPS22DF_REF_P_L         = 0x16,
+      LPS22DF_REF_P_H         = 0x17,
+      LPS22DF_RPDS_L          = 0x1A,
+      LPS22DF_RPDS_H          = 0x1B,
+      LPS22DF_INT_SOURCE      = 0x24,
+} regAddr;
+
+typedef struct {
+  deviceType _device;
+  sa0State sa0;
+  uint8_t address;
+  regAddr translated_regs[dummy_reg_count + 1];
+} LPS;
 
-#define SA0_LOW_ADDRESS 0b1011100
-#define SA0_HIGH_ADDRESS 0b1011101
-
-#define LPS331AP_WHO_ID 0xBB
-#define LPS25H_WHO_ID 0xBD
-#define LPS22DF_WHO_ID 0xB4
-
-bool LPS_init(LPS22 *sensor){
-  sensor->_device = device_auto;
-  sensor->address = SA0_HIGH_ADDRESS;
-  sensor->sa0 = sa0_auto;
-
-  if(!detectDeviceAndAddress(sensor, device_auto, sa0_auto)) return false;
-    
-  switch(sensor->_device){
-    case device_25H:
-      sensor->translated_regs[-REF_P_L]       = LPS25H_REF_P_L; 
-      sensor->translated_regs[-REF_P_H]       = LPS25H_REF_P_H;
-      sensor->translated_regs[-CTRL_REG1]     = LPS25H_CTRL_REG1;
-      sensor->translated_regs[-CTRL_REG2]     = LPS25H_CTRL_REG2;
-      sensor->translated_regs[-CTRL_REG3]     = LPS25H_CTRL_REG3;
-      sensor->translated_regs[-CTRL_REG4]     = LPS25H_CTRL_REG4;
-      sensor->translated_regs[-INTERRUPT_CFG] = LPS25H_INTERRUPT_CFG;
-      sensor->translated_regs[-INT_SOURCE]    = LPS25H_INT_SOURCE;
-      sensor->translated_regs[-FIFO_CTRL]     = LPS25H_FIFO_CTRL;
-      sensor->translated_regs[-THS_P_L]       = LPS25H_THS_P_L;
-      sensor->translated_regs[-THS_P_H]       = LPS25H_THS_P_H;
-      sensor->translated_regs[-RPDS_L]        = LPS25H_RPDS_L;
-      sensor->translated_regs[-RPDS_H]        = LPS25H_RPDS_H;
-      return true;
-    
-    case device_331AP:
-      sensor->translated_regs[-REF_P_L]       = LPS331AP_REF_P_L; 
-      sensor->translated_regs[-REF_P_H]       = LPS331AP_REF_P_H;
-      sensor->translated_regs[-CTRL_REG1]     = LPS331AP_CTRL_REG1;
-      sensor->translated_regs[-CTRL_REG2]     = LPS331AP_CTRL_REG2;
-      sensor->translated_regs[-CTRL_REG3]     = LPS331AP_CTRL_REG3;
-      sensor->translated_regs[-INTERRUPT_CFG] = LPS331AP_INTERRUPT_CFG;
-      sensor->translated_regs[-INT_SOURCE]    = LPS331AP_INT_SOURCE;
-      sensor->translated_regs[-THS_P_L]       = LPS331AP_THS_P_L;
-      sensor->translated_regs[-THS_P_H]       = LPS331AP_THS_P_H;
-      return true;
-
-    case device_22DF:
-      sensor->translated_regs[-REF_P_L]       = LPS22DF_REF_P_L; 
-      sensor->translated_regs[-REF_P_H]       = LPS22DF_REF_P_H;
-      sensor->translated_regs[-CTRL_REG1]     = LPS22DF_CTRL_REG1;
-      sensor->translated_regs[-CTRL_REG2]     = LPS22DF_CTRL_REG2;
-      sensor->translated_regs[-CTRL_REG3]     = LPS22DF_CTRL_REG3;
-      sensor->translated_regs[-CTRL_REG4]     = LPS22DF_CTRL_REG4;
-      sensor->translated_regs[-INTERRUPT_CFG] = LPS22DF_INTERRUPT_CFG;
-      sensor->translated_regs[-INT_SOURCE]    = LPS22DF_INT_SOURCE;
-      sensor->translated_regs[-FIFO_CTRL]     = LPS22DF_FIFO_CTRL;
-      sensor->translated_regs[-THS_P_L]       = LPS22DF_THS_P_L;
-      sensor->translated_regs[-THS_P_H]       = LPS22DF_THS_P_H;
-      sensor->translated_regs[-RPDS_L]        = LPS22DF_RPDS_L;
-      sensor->translated_regs[-RPDS_H]        = LPS22DF_RPDS_H;
-      return true;
-    
-    default:
-      return false;
-  }
-}
-
-void LPS_enable(LPS22 sensor){
-  if(sensor._device == device_22DF){
-
-    writeReg(sensor, CTRL_REG1, 0x18);
-    
-    writeReg(sensor, CTRL_REG3, 0x01);
-
-  }else if(sensor._device == device_25H){
-
-    writeReg(sensor, CTRL_REG1, 0xB0);
-
-  }else if(sensor._device == device_331AP){
-
-    writeReg(sensor, CTRL_REG1, 0xE0);
-
-  }
-}
-
-void writeReg(LPS22 sensor, int reg, uint8_t value){
-  if( reg < 0){
-    reg = sensor.translated_regs[-reg];
-  }
-  
-  i2c_cmd_handle_t cmd = i2c_cmd_link_create();
-  i2c_master_start(cmd);
-
-  i2c_master_write_byte(cmd, (sensor.address << 1) | I2C_MASTER_WRITE, 1);
-
-  i2c_master_write_byte(cmd, reg, true);
-  
-  i2c_master_write_byte(cmd, value, true); 
-  
-  i2c_master_stop(cmd);
-
-  esp_err_t ret = i2c_master_cmd_begin(I2C_NUM_0, cmd, pdMS_TO_TICKS(1000));
-  if(ret != ESP_OK){
-    printf("writeReg failed with error: %s", esp_err_to_name(ret));
-  }
-
-  i2c_cmd_link_delete(cmd);
-}
-
-uint8_t readReg(LPS22 sensor, int reg){
-  uint8_t value;
-
-  if(reg < 0){
-    reg = sensor.translated_regs[-reg];
-  }
-
-  i2c_cmd_handle_t cmd = i2c_cmd_link_create();
-  i2c_master_start(cmd);
-
-  i2c_master_write_byte(cmd, (sensor.address << 1) | I2C_MASTER_WRITE, true);
-
-  i2c_master_write_byte(cmd, reg, true);
-
-  i2c_master_start(cmd);
-
-  i2c_master_write_byte(cmd, (sensor.address << 1) | I2C_MASTER_READ, true);
-
-  i2c_master_read_byte(cmd, &value, I2C_MASTER_NACK);
-
-  i2c_master_stop(cmd);
-  
-  esp_err_t ret = i2c_master_cmd_begin(I2C_NUM_0, cmd, 1000 / portTICK_PERIOD_MS);
-
-  if(ret != ESP_OK){
-    printf("readReg failed with error: %s\n", esp_err_to_name(ret));
-    return 0xFF;
-  }
-
-  i2c_cmd_link_delete(cmd);
-
-  return value;
-}
-
-float readPressureMillibars(LPS22 sensor){
-  return (float)readPressureRaw(sensor) / 4096;
-}
-
-float readPressureInchesHg(LPS22 sensor){
-  return (float)readPressureRaw(sensor) / 138706.5;
-}
-
-int32_t readPressureRaw(LPS22 sensor){
-  uint8_t pxl, pl, ph;
-
-  i2c_cmd_handle_t cmd = i2c_cmd_link_create();
-  i2c_master_start(cmd);
-
-  i2c_master_write_byte(cmd, (sensor.address << 1) | I2C_MASTER_WRITE, true);
-  
-  if(sensor._device == device_25H || sensor._device == device_331AP){
-    i2c_master_write_byte(cmd, (PRESS_OUT_XL | (1 << 7)), true);
-  }else {
-    i2c_master_write_byte(cmd, PRESS_OUT_XL, true);
-  }
-  
-  i2c_master_stop(cmd);
-  
-  esp_err_t ret = i2c_master_cmd_begin(I2C_NUM_0, cmd, 1000 / portTICK_PERIOD_MS);
-  
-  i2c_cmd_link_delete(cmd);
-  
-  if(ret != ESP_OK){
-    printf("readPressureRaw [write] failed with error: %s\n", esp_err_to_name(ret));
-    return 0xFF;
-  }
-  
-  cmd = i2c_cmd_link_create();
-
-  i2c_master_start(cmd);
-
-  i2c_master_write_byte(cmd, (sensor.address << 1) | I2C_MASTER_READ, true);
-  
-  i2c_master_read_byte(cmd, &pxl, I2C_MASTER_ACK);
-  i2c_master_read_byte(cmd, &pl, I2C_MASTER_ACK);
-  i2c_master_read_byte(cmd, &ph, I2C_MASTER_NACK);
-
-  i2c_master_stop(cmd);
-
-  ret = i2c_master_cmd_begin(I2C_NUM_0, cmd, 1000 / portTICK_PERIOD_MS);
-  
-  i2c_cmd_link_delete(cmd);
-
-  if(ret != ESP_OK){
-    printf("readPressureRaw [read] failed with error: %s\n", esp_err_to_name(ret));
-    return 0xFF;
-  }
-  
-  return (int32_t)(int8_t)ph << 16 | (uint16_t)pl << 8 | pxl;
-}
-
-float readTemperatureC(LPS22 sensor){
-  if(sensor._device == device_22DF){
-    return (float)readTemperatureRaw(sensor) / 100;
-  }else if(sensor._device == device_25H || sensor._device == device_331AP){
-    return 42.5 + (float)readTemperatureRaw(sensor) / 480;
-  }
-  return 0.0;
-}
-
-float readTemperatureF(LPS22 sensor){
-  if(sensor._device == device_22DF){
-    return 32 + (float)readTemperatureRaw(sensor) / 100 * 1.8;
-  }else if(sensor._device == device_25H || sensor._device == device_331AP){
-    return 108.5 + (float)readTemperatureRaw(sensor) / 480 * 1.8;
-  }
-  return 0.0;
-}
-
-int16_t readTemperatureRaw(LPS22 sensor){
-  uint8_t tl, th;
-
-  i2c_cmd_handle_t cmd = i2c_cmd_link_create();
-  i2c_master_start(cmd);
-
-  i2c_master_write_byte(cmd, (sensor.address << 1) | I2C_MASTER_WRITE, true);
-
-  if(sensor._device == device_25H || sensor._device == device_331AP){
-    i2c_master_write_byte(cmd, TEMP_OUT_L | (1 << 7), true);
-  }else {
-    i2c_master_write_byte(cmd, TEMP_OUT_L, true);
-  }
-
-  i2c_master_stop(cmd);
-
-  esp_err_t ret = i2c_master_cmd_begin(I2C_NUM_0, cmd, 1000 / portTICK_PERIOD_MS);
-  
-  i2c_cmd_link_delete(cmd);
-
-  if(ret != ESP_OK){
-    printf("readTemperatureRaw [write] failed with error: %s\n", esp_err_to_name(ret));
-    return 0xFF;
-  }
-
-  cmd = i2c_cmd_link_create();
-
-  i2c_master_start(cmd);
+bool LPS_init(LPS *sensor);
+void LPS_enable(LPS sensor);
+void writeReg(LPS sensor, int reg, uint8_t value);
 
-  i2c_master_write_byte(cmd, (sensor.address << 1) | I2C_MASTER_READ, true);
-  
-  i2c_master_read_byte(cmd, &tl, I2C_MASTER_ACK);
-  i2c_master_read_byte(cmd, &th, I2C_MASTER_NACK);
+uint8_t readReg(LPS sensor, int reg);
+float readPressureMillibars(LPS sensor);
 
-  i2c_master_stop(cmd);
+float readPressureInchesHg(LPS sensor);
 
-  ret = i2c_master_cmd_begin(I2C_NUM_0, cmd, 1000 / portTICK_PERIOD_MS);
+int32_t readPressureRaw(LPS sensor);
+float readTemperatureC(LPS sensor);
 
-  if(ret != ESP_OK){
-    printf("readTemperatureRaw [read] failed with error: %s\n", esp_err_to_name(ret));
-    return 0xFF;
-  }
+float readTemperatureF(LPS sensor);
+int16_t readTemperatureRaw(LPS sensor);
+float pressureToAltitudeMeters(float pressure_mbar);
+float pressureToAltitudeFeet(float pressure_inHg);
 
-  i2c_cmd_link_delete(cmd);
+bool detectDeviceAndAddress(LPS *sensor, deviceType device, sa0State sa0);
+bool detectDevice(LPS *sensor, deviceType device);
+int testWhoAmI(uint8_t address);
+uint8_t getAddress(LPS sensor);
 
-  return (int16_t)(th << 8 | tl);
-}
-
-float pressureToAltitudeMeters(float pressure_mbar){
-  return (1 - pow(pressure_mbar / 1013.25, 0.190263)) * 44330.8;
-}
-
-float pressureToAltitudeFeet(float pressure_inHg){
-  return (1 - pow(pressure_inHg / 29.9213, 0.190263)) * 145442;
-}
-
-bool detectDeviceAndAddress(LPS22 *sensor, deviceType device, sa0State sa0){
-  if(sa0 == sa0_auto || sa0 == sa0_high){
-    sensor->address = SA0_HIGH_ADDRESS;
-    if(detectDevice(sensor, device)) return true;
-  }
-  if(sa0 == sa0_auto || sa0 == sa0_low){
-    sensor->address = SA0_LOW_ADDRESS;
-    if(detectDevice(sensor, device)) return true;
-  }
-
-  return false;
-}
-
-bool detectDevice(LPS22 *sensor, deviceType device){
-  int id = testWhoAmI(sensor->address);
-
-  if((device == device_auto || device == device_22DF) && id == LPS22DF_WHO_ID){
-    sensor->_device = device_22DF;
-    return true;
-  }
-  if((device == device_auto || device == device_25H) && id == LPS25H_WHO_ID){
-    sensor->_device = device_25H;
-    return true;
-  }
-  if((device == device_auto || device == device_331AP) && id == LPS331AP_WHO_ID){
-    sensor->_device = device_331AP;
-    return true;
-  }
-  return false;
-}
-
-int testWhoAmI(uint8_t address){
-  uint8_t reg = WHO_AM_I;
-  uint8_t value; 
-
-  i2c_cmd_handle_t cmd = i2c_cmd_link_create();
-  i2c_master_start(cmd);
-
-  i2c_master_write_byte(cmd, (address << 1) | I2C_MASTER_WRITE, true);
-
-  i2c_master_write_byte(cmd, reg, true);
-
-  i2c_master_start(cmd);
-
-  i2c_master_write_byte(cmd, (address << 1) | I2C_MASTER_READ, true);
-
-  i2c_master_read_byte(cmd, &value, I2C_MASTER_NACK);
-
-  i2c_master_stop(cmd);
-
-  esp_err_t ret = i2c_master_cmd_begin(I2C_NUM_0, cmd, 1000 / portTICK_PERIOD_MS);
-  
-  i2c_cmd_link_delete(cmd);
-
-  if(ret != ESP_OK){
-    printf("testWhoAmI failed with error: %s\n", esp_err_to_name(ret));
-    return 0xFF;
-  }
-
-  return value;
-}
-
-deviceType getDeviceType(LPS22 sensor){
-  return sensor._device;
-}
-
-uint8_t getAddress(LPS22 sensor){
-  return sensor.address;
-}
-
-
+#endif

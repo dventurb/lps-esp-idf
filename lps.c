@@ -10,7 +10,7 @@
 #define LPS25H_WHO_ID 0xBD
 #define LPS22DF_WHO_ID 0xB4
 
-bool LPS_init(LPS22 *sensor){
+bool LPS_init(LPS *sensor){
   sensor->_device = device_auto;
   sensor->address = SA0_HIGH_ADDRESS;
   sensor->sa0 = sa0_auto;
@@ -67,7 +67,7 @@ bool LPS_init(LPS22 *sensor){
   }
 }
 
-void LPS_enable(LPS22 sensor){
+void LPS_enable(LPS sensor){
   if(sensor._device == device_22DF){
 
     writeReg(sensor, CTRL_REG1, 0x18);
@@ -85,7 +85,7 @@ void LPS_enable(LPS22 sensor){
   }
 }
 
-void writeReg(LPS22 sensor, int reg, uint8_t value){
+void writeReg(LPS sensor, int reg, uint8_t value){
   if( reg < 0){
     reg = sensor.translated_regs[-reg];
   }
@@ -109,7 +109,7 @@ void writeReg(LPS22 sensor, int reg, uint8_t value){
   i2c_cmd_link_delete(cmd);
 }
 
-uint8_t readReg(LPS22 sensor, int reg){
+uint8_t readReg(LPS sensor, int reg){
   uint8_t value;
 
   if(reg < 0){
@@ -143,15 +143,15 @@ uint8_t readReg(LPS22 sensor, int reg){
   return value;
 }
 
-float readPressureMillibars(LPS22 sensor){
+float readPressureMillibars(LPS sensor){
   return (float)readPressureRaw(sensor) / 4096;
 }
 
-float readPressureInchesHg(LPS22 sensor){
+float readPressureInchesHg(LPS sensor){
   return (float)readPressureRaw(sensor) / 138706.5;
 }
 
-int32_t readPressureRaw(LPS22 sensor){
+int32_t readPressureRaw(LPS sensor){
   uint8_t pxl, pl, ph;
 
   i2c_cmd_handle_t cmd = i2c_cmd_link_create();
@@ -200,7 +200,7 @@ int32_t readPressureRaw(LPS22 sensor){
   return (int32_t)(int8_t)ph << 16 | (uint16_t)pl << 8 | pxl;
 }
 
-float readTemperatureC(LPS22 sensor){
+float readTemperatureC(LPS sensor){
   if(sensor._device == device_22DF){
     return (float)readTemperatureRaw(sensor) / 100;
   }else if(sensor._device == device_25H || sensor._device == device_331AP){
@@ -209,7 +209,7 @@ float readTemperatureC(LPS22 sensor){
   return 0.0;
 }
 
-float readTemperatureF(LPS22 sensor){
+float readTemperatureF(LPS sensor){
   if(sensor._device == device_22DF){
     return 32 + (float)readTemperatureRaw(sensor) / 100 * 1.8;
   }else if(sensor._device == device_25H || sensor._device == device_331AP){
@@ -218,7 +218,7 @@ float readTemperatureF(LPS22 sensor){
   return 0.0;
 }
 
-int16_t readTemperatureRaw(LPS22 sensor){
+int16_t readTemperatureRaw(LPS sensor){
   uint8_t tl, th;
 
   i2c_cmd_handle_t cmd = i2c_cmd_link_create();
@@ -274,7 +274,7 @@ float pressureToAltitudeFeet(float pressure_inHg){
   return (1 - pow(pressure_inHg / 29.9213, 0.190263)) * 145442;
 }
 
-bool detectDeviceAndAddress(LPS22 *sensor, deviceType device, sa0State sa0){
+bool detectDeviceAndAddress(LPS *sensor, deviceType device, sa0State sa0){
   if(sa0 == sa0_auto || sa0 == sa0_high){
     sensor->address = SA0_HIGH_ADDRESS;
     if(detectDevice(sensor, device)) return true;
@@ -287,7 +287,7 @@ bool detectDeviceAndAddress(LPS22 *sensor, deviceType device, sa0State sa0){
   return false;
 }
 
-bool detectDevice(LPS22 *sensor, deviceType device){
+bool detectDevice(LPS *sensor, deviceType device){
   int id = testWhoAmI(sensor->address);
 
   if((device == device_auto || device == device_22DF) && id == LPS22DF_WHO_ID){
@@ -336,11 +336,11 @@ int testWhoAmI(uint8_t address){
   return value;
 }
 
-deviceType getDeviceType(LPS22 sensor){
+deviceType getDeviceType(LPS sensor){
   return sensor._device;
 }
 
-uint8_t getAddress(LPS22 sensor){
+uint8_t getAddress(LPS sensor){
   return sensor.address;
 }
 
